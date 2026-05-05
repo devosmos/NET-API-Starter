@@ -40,7 +40,7 @@ jobs:
         run: dotnet ef migrations has-pending-model-changes --project src/Devosmos.ApiStarter.Infrastructure --startup-project src/Devosmos.ApiStarter.Api --context AppDbContext
 
       - name: Bicep build
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: az bicep build --file infra/main.bicep
 
