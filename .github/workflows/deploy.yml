@@ -1,0 +1,101 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment.
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+      resourceGroup:
+        description: Existing Azure resource group.
+        required: true
+        type: string
+      location:
+        description: Azure region for resource group creation fallback.
+        required: true
+        default: eastus2
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  DOTNET_VERSION: 10.0.x
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group
+        run: az group create --name "${{ inputs.resourceGroup }}" --location "${{ inputs.location }}"
+
+      - name: Bicep what-if
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+        run: |
+          az deployment group what-if \
+            --resource-group "${{ inputs.resourceGroup }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/${{ inputs.environment }}.bicepparam
+
+      - name: Deploy infrastructure
+        id: infra
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+        run: |
+          az deployment group create \
+            --resource-group "${{ inputs.resourceGroup }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/environments/${{ inputs.environment }}.bicepparam \
+            --query properties.outputs \
+            --output json > deployment-outputs.json
+          echo "webAppName=$(jq -r '.webAppName.value' deployment-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "stagingUrl=$(jq -r '.stagingUrl.value' deployment-outputs.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish API
+        run: dotnet publish src/Devosmos.ApiStarter.Api/Devosmos.ApiStarter.Api.csproj --configuration Release --output artifacts/publish
+
+      - name: Package API
+        run: |
+          cd artifacts/publish
+          zip -r ../api.zip .
+
+      - name: Deploy to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ steps.infra.outputs.webAppName }}
+          slot-name: staging
+          package: artifacts/api.zip
+
+      - name: Smoke test staging
+        run: curl --fail --retry 12 --retry-delay 10 "${{ steps.infra.outputs.stagingUrl }}/health/live"
+
+      - name: Swap staging to production
+        run: |
+          az webapp deployment slot swap \
+            --resource-group "${{ inputs.resourceGroup }}" \
+            --name "${{ steps.infra.outputs.webAppName }}" \
+            --slot staging \
+            --target-slot production

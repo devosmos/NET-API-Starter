@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Restore
+        run: dotnet restore Devosmos.ApiStarter.sln
+
+      - name: Build
+        run: dotnet build Devosmos.ApiStarter.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Devosmos.ApiStarter.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      - name: Format check
+        run: dotnet format Devosmos.ApiStarter.sln --verify-no-changes --no-restore
+
+      - name: Pending migration check
+        run: dotnet ef migrations has-pending-model-changes --project src/Devosmos.ApiStarter.Infrastructure --startup-project src/Devosmos.ApiStarter.Api --context AppDbContext
+
+      - name: Bicep build
+        uses: azure/CLI@v2
+        with:
+          inlineScript: az bicep build --file infra/main.bicep
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: TestResults

@@ -1,0 +1,48 @@
+name: migration-script
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/Devosmos.ApiStarter.Infrastructure/Persistence/**
+      - src/Devosmos.ApiStarter.Domain/**
+      - src/Devosmos.ApiStarter.Application/**
+
+permissions:
+  contents: read
+
+jobs:
+  generate-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Restore
+        run: dotnet restore Devosmos.ApiStarter.sln
+
+      - name: Build
+        run: dotnet build Devosmos.ApiStarter.sln --configuration Release --no-restore
+
+      - name: Generate idempotent SQL
+        run: |
+          mkdir -p artifacts/sql
+          dotnet ef migrations script --idempotent \
+            --project src/Devosmos.ApiStarter.Infrastructure \
+            --startup-project src/Devosmos.ApiStarter.Api \
+            --context AppDbContext \
+            --output artifacts/sql/Devosmos.ApiStarter.sql
+
+      - name: Upload migration SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-migration-sql
+          path: artifacts/sql/Devosmos.ApiStarter.sql

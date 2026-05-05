@@ -1,0 +1,26 @@
+{
+  "name": "safety-and-context",
+  "description": "Repository guardrails for AI-assisted changes.",
+  "checks": [
+    {
+      "id": "clean-architecture",
+      "description": "Do not add dependencies from Domain to other layers, or from Application to Infrastructure or Api."
+    },
+    {
+      "id": "domain-neutrality",
+      "description": "Do not add sample products, orders, todos, invoices, customers, or fake aggregates."
+    },
+    {
+      "id": "migration-safety",
+      "description": "Do not apply EF Core migrations on application startup. Generate reviewed idempotent SQL scripts."
+    },
+    {
+      "id": "secret-safety",
+      "description": "Do not commit connection strings, passwords, client secrets, certificates, or tokens."
+    },
+    {
+      "id": "test-stack",
+      "description": "Use xUnit v3, FluentAssertions 7.2.x, NSubstitute, Testcontainers.MsSql, Respawn, and coverlet."
+    }
+  ]
+}
